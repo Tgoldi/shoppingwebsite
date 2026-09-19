@@ -103,7 +103,8 @@ public class OrderController {
             OrderDTO closedOrder = orderService.closeOrder(orderId, userEmail);
             return ResponseEntity.ok(closedOrder);
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            logger.error("Error closing order", e);
+            return ResponseEntity.badRequest().body("Something went wrong");
         }
     }
 
@@ -117,7 +118,7 @@ public class OrderController {
             return ResponseEntity.ok().body(new OrderCreationResponse(order.getId()));
         } catch (Exception e) {
             logger.error("Error creating order from cart", e);
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body("Something went wrong");
         }
     }
 
