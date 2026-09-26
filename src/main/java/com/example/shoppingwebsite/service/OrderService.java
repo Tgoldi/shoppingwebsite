@@ -52,6 +52,13 @@ public class OrderService {
         return orderRepository.findByIdAndUser(orderId, user).map(this::convertToDTO);
     }
 
+    private Order getOrderEntity(Long orderId, String userEmail) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        return orderRepository.findByIdAndUser(orderId, user)
+                .orElseThrow(() -> new RuntimeException("Order not found"));
+    }
+
     public Optional<OrderDTO> getUserPendingOrder(String userEmail) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -133,9 +140,7 @@ public class OrderService {
         logger.info("Updating item quantity: orderId={}, orderItemId={}, newQuantity={}, userEmail={}",
                 orderId, orderItemId, newQuantity, userEmail);
         try {
-            Order order = getOrder(orderId, userEmail)
-                    .map(this::convertToEntity)
-                    .orElseThrow(() -> new RuntimeException("Order not found"));
+            Order order = getOrderEntity(orderId, userEmail);
 
             OrderItem orderItem = order.getOrderItems().stream()
                     .filter(item -> item.getId().equals(orderItemId))
@@ -313,9 +318,7 @@ public class OrderService {
         logger.info("Adding item to existing order: orderId={}, itemId={}, quantity={}, userEmail={}",
                 orderId, itemId, quantity, userEmail);
         try {
-            Order order = getOrder(orderId, userEmail)
-                    .map(this::convertToEntity)
-                    .orElseThrow(() -> new RuntimeException("Order not found"));
+            Order order = getOrderEntity(orderId, userEmail);
 
             Item item = itemRepository.findById(itemId)
                     .orElseThrow(() -> new RuntimeException("Item not found"));
