@@ -22,7 +22,12 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -38,8 +43,49 @@ public class AuthController {
     @Autowired
     private JwtUtil jwtUtil;
 
+    // In-memory rate limiter: resets on restart and counts per server instance.
+    private static final long RATE_WINDOW_MS = 60_000L;
+    private static final int LOGIN_MAX_ATTEMPTS = 10;
+    private static final int REGISTER_MAX_ATTEMPTS = 5;
+    private static final int RATE_MAP_MAX_SIZE = 10_000;
+    private static final Map<String, long[]> RATE_LIMIT_ENTRIES = new ConcurrentHashMap<>();
+
+    static {
+        Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "auth-rate-limit-cleanup");
+            t.setDaemon(true);
+            return t;
+        }).scheduleAtFixedRate(() -> {
+            long now = System.currentTimeMillis();
+            Iterator<Map.Entry<String, long[]>> it = RATE_LIMIT_ENTRIES.entrySet().iterator();
+            while (it.hasNext()) {
+                if (now - it.next().getValue()[1] > RATE_WINDOW_MS) {
+                    it.remove();
+                }
+            }
+        }, RATE_WINDOW_MS, RATE_WINDOW_MS, TimeUnit.MILLISECONDS);
+    }
+
+    private static boolean isRateLimited(String key, int max) {
+        long now = System.currentTimeMillis();
+        if (RATE_LIMIT_ENTRIES.size() >= RATE_MAP_MAX_SIZE && !RATE_LIMIT_ENTRIES.containsKey(key)) {
+            return true;
+        }
+        long[] entry = RATE_LIMIT_ENTRIES.compute(key, (k, v) -> {
+            if (v == null || now - v[1] > RATE_WINDOW_MS) {
+                return new long[]{1, now};
+            }
+            v[0]++;
+            return v;
+        });
+        return entry[0] > max;
+    }
+
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest loginRequest) {
+    public ResponseEntity<?> login(@RequestBody LoginRequest loginRequest, HttpServletRequest httpRequest) {
+        if (isRateLimited("login:" + httpRequest.getRemoteAddr() + ":" + loginRequest.getEmail(), LOGIN_MAX_ATTEMPTS)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body("Too many login attempts. Try again later.");
+        }
         logger.info("Login attempt for user: {}", loginRequest.getEmail());
         try {
             Authentication authentication = authenticationManager.authenticate(
@@ -70,8 +116,17 @@ public class AuthController {
     }
 
     @PostMapping(value = "/register", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> registerUser(@RequestBody User user) {
+    public ResponseEntity<?> registerUser(@RequestBody User requestUser, HttpServletRequest httpRequest) {
+        if (isRateLimited("register:" + httpRequest.getRemoteAddr(), REGISTER_MAX_ATTEMPTS)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body("Too many registration attempts. Try again later.");
+        }
         try {
+            // Only copy the fields a client may set; ignore id/cart/favorites etc.
+            User user = new User();
+            user.setEmail(requestUser.getEmail());
+            user.setPassword(requestUser.getPassword());
+            user.setName(requestUser.getName());
+
             // Check if user already exists
             UserDetails existingUser = null;
             try {

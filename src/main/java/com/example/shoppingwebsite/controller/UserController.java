@@ -20,6 +20,7 @@ public class UserController {
     public ResponseEntity<User> getUserProfile(Authentication authentication) {
         String email = authentication.getName();
         User user = userService.getUserProfile(email);
+        user.setPassword(null);
         return ResponseEntity.ok(user);
     }
 
@@ -27,6 +28,7 @@ public class UserController {
     public ResponseEntity<User> updateUserProfile(Authentication authentication, @RequestBody User updatedUser) {
         String email = authentication.getName();
         User user = userService.updateUserProfile(email, updatedUser);
+        user.setPassword(null);
         return ResponseEntity.ok(user);
     }
 

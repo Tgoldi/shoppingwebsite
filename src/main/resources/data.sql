@@ -9,6 +9,3 @@ INSERT INTO items (name, description, image_url, price, stock_quantity) VALUES
 ('Gaming Console', 'Next-gen gaming console', 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/14/Wii-console.jpg/600px-Wii-console.jpg', 499.99, 8),
 ('Printer', 'All-in-one printer', 'https://i1.adis.ws/i/canon/pixma-pro-10-frt_3d381774a9aa4a089ef00eb881acbb8a?$block-hero-header-3by2-dt-jpg$', 129.99, 12),
 ('External Hard Drive', '1TB external hard drive', 'https://5.imimg.com/data5/WY/AF/MF/SELLER-43867843/internal-hard-drive-disk-500x500.jpg', 59.99, 50);
-
-INSERT INTO users (email, password, first_name, last_name)
-VALUES ('user@example.com', '$2a$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG', 'Test', 'User');

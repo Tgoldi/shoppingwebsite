@@ -58,8 +58,23 @@ public class OrderService {
         return orderRepository.findByUserAndStatus(user, OrderStatus.TEMP).map(this::convertToDTO);
     }
 
+    private static final int MAX_QUANTITY_PER_ITEM = 2;
+
+    private void validateQuantity(int quantity) {
+        if (quantity < 1 || quantity > MAX_QUANTITY_PER_ITEM) {
+            throw new RuntimeException("Quantity must be between 1 and " + MAX_QUANTITY_PER_ITEM);
+        }
+    }
+
+    private void validateStock(Item item, int totalQuantity) {
+        if (item.getStockQuantity() < totalQuantity) {
+            throw new RuntimeException("Not enough stock for item: " + item.getName());
+        }
+    }
+
     @Transactional
     public OrderDTO addItemToOrder(String userEmail, Long itemId, int quantity) {
+        validateQuantity(quantity);
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -75,14 +90,16 @@ public class OrderService {
         if (existingItem.isPresent()) {
             OrderItem orderItem = existingItem.get();
             int newQuantity = orderItem.getQuantity() + quantity;
-            if (newQuantity > 2) {
+            if (newQuantity > MAX_QUANTITY_PER_ITEM) {
                 throw new RuntimeException("Cannot add more than 2 of the same item");
             }
+            validateStock(item, newQuantity);
             orderItem.setQuantity(newQuantity);
         } else {
-            if (quantity > 2) {
+            if (quantity > MAX_QUANTITY_PER_ITEM) {
                 throw new RuntimeException("Cannot add more than 2 of the same item");
             }
+            validateStock(item, quantity);
             OrderItem newItem = new OrderItem();
             newItem.setOrder(order);
             newItem.setItem(item);
@@ -142,11 +159,15 @@ public class OrderService {
                     .findFirst()
                     .orElseThrow(() -> new RuntimeException("Item not found in order"));
 
-            if (newQuantity > 2) {
+            if (order.getStatus() != OrderStatus.TEMP) {
+                throw new RuntimeException("Order can no longer be modified");
+            }
+            if (newQuantity > MAX_QUANTITY_PER_ITEM) {
                 throw new RuntimeException("Cannot add more than 2 of the same item");
             } else if (newQuantity <= 0) {
                 order.getOrderItems().remove(orderItem);
             } else {
+                validateStock(orderItem.getItem(), newQuantity);
                 orderItem.setQuantity(newQuantity);
             }
 
@@ -175,7 +196,8 @@ public class OrderService {
 
         // Update item quantities
         for (OrderItem orderItem : order.getOrderItems()) {
-            Item item = orderItem.getItem();
+            Item item = itemRepository.findById(orderItem.getItem().getId())
+                    .orElseThrow(() -> new RuntimeException("Item not found"));
             int newStockQuantity = item.getStockQuantity() - orderItem.getQuantity();
             if (newStockQuantity < 0) {
                 throw new RuntimeException("Not enough stock for item: " + item.getName());
@@ -298,7 +320,7 @@ public class OrderService {
         orderItem.setId(dto.getId());
         orderItem.setItem(itemRepository.findById(dto.getItemId()).orElseThrow(() -> new RuntimeException("Item not found")));
         orderItem.setQuantity(dto.getQuantity());
-        orderItem.setPrice(dto.getPrice());
+        orderItem.setPrice(orderItem.getItem().getPrice());
         return orderItem;
     }
 
@@ -312,6 +334,7 @@ public class OrderService {
     public OrderDTO addItemToExistingOrder(Long orderId, Long itemId, int quantity, String userEmail) {
         logger.info("Adding item to existing order: orderId={}, itemId={}, quantity={}, userEmail={}",
                 orderId, itemId, quantity, userEmail);
+        validateQuantity(quantity);
         try {
             Order order = getOrder(orderId, userEmail)
                     .map(this::convertToEntity)
@@ -327,14 +350,16 @@ public class OrderService {
             if (existingItem.isPresent()) {
                 OrderItem orderItem = existingItem.get();
                 int newQuantity = orderItem.getQuantity() + quantity;
-                if (newQuantity > 2) {
+                if (newQuantity > MAX_QUANTITY_PER_ITEM) {
                     throw new RuntimeException("Cannot add more than 2 of the same item");
                 }
+                validateStock(item, newQuantity);
                 orderItem.setQuantity(newQuantity);
             } else {
-                if (quantity > 2) {
+                if (quantity > MAX_QUANTITY_PER_ITEM) {
                     throw new RuntimeException("Cannot add more than 2 of the same item");
                 }
+                validateStock(item, quantity);
                 OrderItem newItem = new OrderItem();
                 newItem.setOrder(order);
                 newItem.setItem(item);
