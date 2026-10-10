@@ -47,7 +47,7 @@ public class JwtUtil {
         try {
             return Jwts.parserBuilder().setSigningKey(getSigningKey()).build().parseClaimsJws(token).getBody();
         } catch (Exception e) {
-            logger.error("Could not extract claims from token: {}", token, e);
+            logger.error("Could not extract claims from token: {}", e.getClass().getSimpleName());
             throw e;
         }
     }
@@ -81,7 +81,7 @@ public class JwtUtil {
             final String username = extractUsername(token);
             return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
         } catch (Exception e) {
-            logger.error("Token validation failed for token: {}", token, e);
+            logger.error("Token validation failed: {}", e.getClass().getSimpleName());
             return false;
         }
     }
