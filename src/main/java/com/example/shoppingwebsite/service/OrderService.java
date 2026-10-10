@@ -66,6 +66,11 @@ public class OrderService {
         Item item = itemRepository.findById(itemId)
                 .orElseThrow(() -> new RuntimeException("Item not found"));
 
+        validateQuantity(quantity);
+        if (item.getStockQuantity() < quantity) {
+            throw new RuntimeException("Not enough stock for item: " + item.getName());
+        }
+
         Order order = getOrCreatePendingOrder(user);
 
         Optional<OrderItem> existingItem = order.getOrderItems().stream()
@@ -75,6 +80,9 @@ public class OrderService {
         if (existingItem.isPresent()) {
             OrderItem orderItem = existingItem.get();
             int newQuantity = orderItem.getQuantity() + quantity;
+            if (item.getStockQuantity() < newQuantity) {
+                throw new RuntimeException("Not enough stock for item: " + item.getName());
+            }
             if (newQuantity > 2) {
                 throw new RuntimeException("Cannot add more than 2 of the same item");
             }
@@ -137,6 +145,13 @@ public class OrderService {
                     .map(this::convertToEntity)
                     .orElseThrow(() -> new RuntimeException("Order not found"));
 
+            if (order.getStatus() != OrderStatus.TEMP) {
+                throw new RuntimeException("Only open orders can be modified");
+            }
+            if (newQuantity < 0) {
+                throw new RuntimeException("Invalid quantity");
+            }
+
             OrderItem orderItem = order.getOrderItems().stream()
                     .filter(item -> item.getId().equals(orderItemId))
                     .findFirst()
@@ -144,7 +159,7 @@ public class OrderService {
 
             if (newQuantity > 2) {
                 throw new RuntimeException("Cannot add more than 2 of the same item");
-            } else if (newQuantity <= 0) {
+            } else if (newQuantity == 0) {
                 order.getOrderItems().remove(orderItem);
             } else {
                 orderItem.setQuantity(newQuantity);
@@ -175,13 +190,18 @@ public class OrderService {
 
         // Update item quantities
         for (OrderItem orderItem : order.getOrderItems()) {
-            Item item = orderItem.getItem();
+            if (orderItem.getQuantity() <= 0) {
+                throw new RuntimeException("Invalid quantity in order");
+            }
+            // Re-read the item inside the transaction so the stock check uses fresh data
+            Item item = itemRepository.findById(orderItem.getItem().getId())
+                    .orElseThrow(() -> new RuntimeException("Item not found"));
             int newStockQuantity = item.getStockQuantity() - orderItem.getQuantity();
             if (newStockQuantity < 0) {
                 throw new RuntimeException("Not enough stock for item: " + item.getName());
             }
             item.setStockQuantity(newStockQuantity);
-            itemRepository.save(item);
+            itemRepository.saveAndFlush(item);
         }
 
         order.setStatus(OrderStatus.CLOSED);
@@ -298,7 +318,7 @@ public class OrderService {
         orderItem.setId(dto.getId());
         orderItem.setItem(itemRepository.findById(dto.getItemId()).orElseThrow(() -> new RuntimeException("Item not found")));
         orderItem.setQuantity(dto.getQuantity());
-        orderItem.setPrice(dto.getPrice());
+        orderItem.setPrice(orderItem.getItem().getPrice());
         return orderItem;
     }
 
@@ -320,6 +340,14 @@ public class OrderService {
             Item item = itemRepository.findById(itemId)
                     .orElseThrow(() -> new RuntimeException("Item not found"));
 
+            validateQuantity(quantity);
+            if (order.getStatus() != OrderStatus.TEMP && order.getStatus() != OrderStatus.CANCELED) {
+                throw new RuntimeException("Only open orders can be modified");
+            }
+            if (item.getStockQuantity() < quantity) {
+                throw new RuntimeException("Not enough stock for item: " + item.getName());
+            }
+
             Optional<OrderItem> existingItem = order.getOrderItems().stream()
                     .filter(oi -> oi.getItem().getId().equals(itemId))
                     .findFirst();
@@ -327,6 +355,9 @@ public class OrderService {
             if (existingItem.isPresent()) {
                 OrderItem orderItem = existingItem.get();
                 int newQuantity = orderItem.getQuantity() + quantity;
+                if (item.getStockQuantity() < newQuantity) {
+                    throw new RuntimeException("Not enough stock for item: " + item.getName());
+                }
                 if (newQuantity > 2) {
                     throw new RuntimeException("Cannot add more than 2 of the same item");
                 }
@@ -354,6 +385,12 @@ public class OrderService {
         } catch (Exception e) {
             logger.error("Error adding item to existing order", e);
             throw new RuntimeException("Failed to add item to existing order: " + e.getMessage());
+        }
+    }
+
+    private void validateQuantity(int quantity) {
+        if (quantity < 1 || quantity > 2) {
+            throw new RuntimeException("Quantity must be between 1 and 2");
         }
     }
 }
