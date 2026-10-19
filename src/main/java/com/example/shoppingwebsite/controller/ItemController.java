@@ -51,22 +51,6 @@ public class ItemController {
         return ResponseEntity.ok(quantity);
     }
 
-    @PutMapping("/{id}/stock/decrease")
-    public ResponseEntity<?> decreaseStock(@PathVariable Long id, @RequestParam int quantity) {
-        boolean decreased = stockService.decreaseStock(id, quantity);
-        if (decreased) {
-            return ResponseEntity.ok().build();
-        } else {
-            return ResponseEntity.badRequest().body("Not enough stock");
-        }
-    }
-
-    @PutMapping("/{id}/stock/increase")
-    public ResponseEntity<?> increaseStock(@PathVariable Long id, @RequestParam int quantity) {
-        stockService.increaseStock(id, quantity);
-        return ResponseEntity.ok().build();
-    }
-
     @GetMapping("/{itemId}/availability")
     public ResponseEntity<?> checkItemAvailability(@PathVariable Long itemId) {
         logger.info("Checking availability for itemId: {}", itemId);
