@@ -64,14 +64,33 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<?> logout() {
+    public ResponseEntity<?> logout(@RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
+        // Revoke the caller's tokens (access and refresh) so a copied token stops working after logout.
+        // The token must be validly signed, so nobody can log out someone else.
+        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
+            jwtUtil.revokeAllTokensOf(authorizationHeader.substring(7));
+        }
         SecurityContextHolder.clearContext();
         return ResponseEntity.ok().body("Logged out successfully");
     }
 
     @PostMapping(value = "/register", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> registerUser(@RequestBody User user) {
+    public ResponseEntity<?> registerUser(@RequestBody User request) {
         try {
+            // Copy only the sign-up fields: never take id, cart, favorites or other internal fields from the client.
+            User user = new User();
+            user.setFirstName(request.getFirstName());
+            user.setLastName(request.getLastName());
+            user.setEmail(request.getEmail());
+            user.setPassword(request.getPassword());
+            user.setPhone(request.getPhone());
+            user.setCountry(request.getCountry());
+            user.setCity(request.getCity());
+            if (user.getEmail() == null || user.getEmail().isBlank()
+                    || user.getPassword() == null || user.getPassword().isEmpty()) {
+                return ResponseEntity.badRequest().body("Email and password are required");
+            }
+
             // Check if user already exists
             UserDetails existingUser = null;
             try {
@@ -108,7 +127,8 @@ public class AuthController {
             String username = jwtUtil.extractUsername(token);
             UserDetails userDetails = userService.loadUserByUsername(username);
 
-            if (jwtUtil.validateToken(token, userDetails)) {
+            // Only a refresh token (not an access token) that was not revoked by logout can renew access.
+            if (jwtUtil.validateRefreshToken(token, userDetails)) {
                 String newToken = jwtUtil.generateToken(userDetails);
                 Map<String, String> response = new HashMap<>();
                 response.put("token", newToken);

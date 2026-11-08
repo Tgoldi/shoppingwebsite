@@ -14,24 +14,23 @@ public class StockService {
 
     @Transactional
     public boolean decreaseStock(Long itemId, int quantity) {
-        Item item = itemRepository.findById(itemId)
-                .orElseThrow(() -> new RuntimeException("Item not found"));
-
-        if (item.getStockQuantity() >= quantity) {
-            item.setStockQuantity(item.getStockQuantity() - quantity);
-            itemRepository.save(item);
-            return true;
+        if (quantity <= 0) {
+            return false;
         }
-        return false;
+        if (!itemRepository.existsById(itemId)) {
+            throw new RuntimeException("Item not found");
+        }
+        return itemRepository.decreaseStockIfAvailable(itemId, quantity) > 0;
     }
 
     @Transactional
     public void increaseStock(Long itemId, int quantity) {
-        Item item = itemRepository.findById(itemId)
-                .orElseThrow(() -> new RuntimeException("Item not found"));
-
-        item.setStockQuantity(item.getStockQuantity() + quantity);
-        itemRepository.save(item);
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("Quantity must be positive");
+        }
+        if (itemRepository.increaseStockBy(itemId, quantity) == 0) {
+            throw new RuntimeException("Item not found");
+        }
     }
 
     public int getStockQuantity(Long itemId) {

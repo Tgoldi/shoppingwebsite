@@ -33,13 +33,12 @@ public class ItemService {
 
     @Transactional
     public boolean updateStock(Long itemId, int quantity) {
-        Item item = itemRepository.findById(itemId)
-                .orElseThrow(() -> new RuntimeException("Item not found"));
-        if (item.getStockQuantity() >= quantity) {
-            item.setStockQuantity(item.getStockQuantity() - quantity);
-            itemRepository.save(item);
-            return true;
+        if (!itemRepository.existsById(itemId)) {
+            throw new RuntimeException("Item not found");
         }
-        return false;
+        if (quantity <= 0) {
+            return false;
+        }
+        return itemRepository.decreaseStockIfAvailable(itemId, quantity) > 0;
     }
 }

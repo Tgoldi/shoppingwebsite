@@ -24,6 +24,9 @@ public class OrderService {
 
     private static final Logger logger = LoggerFactory.getLogger(OrderService.class);
 
+    /** Business rule: at most this many units of the same item per order. */
+    private static final int MAX_QUANTITY_PER_ITEM = 2;
+
     @Autowired
     private OrderRepository orderRepository;
 
@@ -66,6 +69,10 @@ public class OrderService {
         Item item = itemRepository.findById(itemId)
                 .orElseThrow(() -> new RuntimeException("Item not found"));
 
+        if (quantity <= 0) {
+            throw new RuntimeException("Quantity must be positive");
+        }
+
         Order order = getOrCreatePendingOrder(user);
 
         Optional<OrderItem> existingItem = order.getOrderItems().stream()
@@ -107,6 +114,10 @@ public class OrderService {
                 throw new RuntimeException("User not authorized to modify this order");
             }
 
+            if (order.getStatus() != OrderStatus.TEMP) {
+                throw new RuntimeException("Only open orders can be changed");
+            }
+
             boolean removed = order.getOrderItems().removeIf(item -> item.getId().equals(orderItemId));
             if (!removed) {
                 throw new RuntimeException("Item not found in order");
@@ -133,9 +144,11 @@ public class OrderService {
         logger.info("Updating item quantity: orderId={}, orderItemId={}, newQuantity={}, userEmail={}",
                 orderId, orderItemId, newQuantity, userEmail);
         try {
-            Order order = getOrder(orderId, userEmail)
-                    .map(this::convertToEntity)
-                    .orElseThrow(() -> new RuntimeException("Order not found"));
+            Order order = loadOwnedOrder(orderId, userEmail);
+
+            if (order.getStatus() != OrderStatus.TEMP) {
+                throw new RuntimeException("Only open orders can be changed");
+            }
 
             OrderItem orderItem = order.getOrderItems().stream()
                     .filter(item -> item.getId().equals(orderItemId))
@@ -173,15 +186,21 @@ public class OrderService {
             throw new RuntimeException("Order is already closed");
         }
 
-        // Update item quantities
+        // Claim the order atomically so two concurrent close requests cannot both take stock.
+        if (orderRepository.changeStatusIf(orderId, OrderStatus.TEMP, OrderStatus.CLOSED) == 0) {
+            throw new RuntimeException("Order is already closed");
+        }
+
+        // Update item quantities atomically: each decrease only succeeds when enough stock is left,
+        // so concurrent orders cannot oversell. Any failure rolls back the whole transaction.
         for (OrderItem orderItem : order.getOrderItems()) {
             Item item = orderItem.getItem();
-            int newStockQuantity = item.getStockQuantity() - orderItem.getQuantity();
-            if (newStockQuantity < 0) {
+            if (orderItem.getQuantity() <= 0) {
+                throw new RuntimeException("Invalid quantity for item: " + item.getName());
+            }
+            if (itemRepository.decreaseStockIfAvailable(item.getId(), orderItem.getQuantity()) == 0) {
                 throw new RuntimeException("Not enough stock for item: " + item.getName());
             }
-            item.setStockQuantity(newStockQuantity);
-            itemRepository.save(item);
         }
 
         order.setStatus(OrderStatus.CLOSED);
@@ -216,6 +235,9 @@ public class OrderService {
         order.setOrderDate(LocalDateTime.now());
 
         for (CartItem cartItem : cart.getItems()) {
+            if (cartItem.getQuantity() <= 0 || cartItem.getQuantity() > MAX_QUANTITY_PER_ITEM) {
+                throw new RuntimeException("Cannot add more than " + MAX_QUANTITY_PER_ITEM + " of the same item");
+            }
             OrderItem orderItem = new OrderItem();
             orderItem.setOrder(order);
             orderItem.setItem(cartItem.getItem());
@@ -276,30 +298,15 @@ public class OrderService {
         return dto;
     }
 
-    private Order convertToEntity(OrderDTO orderDTO) {
-        Order order = new Order();
-        order.setId(orderDTO.getId());
-        order.setUser(userRepository.findById(orderDTO.getUserId()).orElseThrow(() -> new RuntimeException("User not found")));
-        order.setOrderDate(orderDTO.getOrderDate());
-        order.setShippingAddress(orderDTO.getShippingAddress());
-        order.setTotalPrice(orderDTO.getTotalPrice());
-        order.setStatus(OrderStatus.valueOf(orderDTO.getStatus()));
-
-        List<OrderItem> orderItems = orderDTO.getOrderItems().stream()
-                .map(this::convertToOrderItemEntity)
-                .collect(Collectors.toList());
-        order.setOrderItems(orderItems);
-
-        return order;
-    }
-
-    private OrderItem convertToOrderItemEntity(OrderItemDTO dto) {
-        OrderItem orderItem = new OrderItem();
-        orderItem.setId(dto.getId());
-        orderItem.setItem(itemRepository.findById(dto.getItemId()).orElseThrow(() -> new RuntimeException("Item not found")));
-        orderItem.setQuantity(dto.getQuantity());
-        orderItem.setPrice(dto.getPrice());
-        return orderItem;
+    /**
+     * Loads the managed order entity owned by this user straight from the database
+     * (no DTO round-trip, so prices, items and status always come from the stored order).
+     */
+    private Order loadOwnedOrder(Long orderId, String userEmail) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        return orderRepository.findByIdAndUser(orderId, user)
+                .orElseThrow(() -> new RuntimeException("Order not found"));
     }
 
     public List<OrderDTO> getUserOrderHistory(String userEmail) {
@@ -313,9 +320,16 @@ public class OrderService {
         logger.info("Adding item to existing order: orderId={}, itemId={}, quantity={}, userEmail={}",
                 orderId, itemId, quantity, userEmail);
         try {
-            Order order = getOrder(orderId, userEmail)
-                    .map(this::convertToEntity)
-                    .orElseThrow(() -> new RuntimeException("Order not found"));
+            if (quantity <= 0) {
+                throw new RuntimeException("Quantity must be positive");
+            }
+
+            Order order = loadOwnedOrder(orderId, userEmail);
+
+            // Completed orders can never be edited; only open (TEMP) or emptied (CANCELED) ones.
+            if (order.getStatus() != OrderStatus.TEMP && order.getStatus() != OrderStatus.CANCELED) {
+                throw new RuntimeException("Only open orders can be changed");
+            }
 
             Item item = itemRepository.findById(itemId)
                     .orElseThrow(() -> new RuntimeException("Item not found"));

@@ -79,7 +79,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
                 logger.info("User details loaded for username: {}", username);
 
-                if (jwtUtil.validateToken(jwt, userDetails)) {
+                // Only access tokens are accepted here: refresh tokens and tokens revoked by logout are refused.
+                if (jwtUtil.validateAccessToken(jwt, userDetails)) {
                     UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
                             userDetails, null, userDetails.getAuthorities());
                     authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

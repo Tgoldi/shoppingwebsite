@@ -103,8 +103,21 @@ public class OrderController {
             OrderDTO closedOrder = orderService.closeOrder(orderId, userEmail);
             return ResponseEntity.ok(closedOrder);
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            logger.error("Error closing order", e);
+            return ResponseEntity.badRequest().body(clientMessage(e, "Could not close order"));
         }
+    }
+
+    /**
+     * The order service reports business problems (empty cart, not enough stock...) as plain RuntimeExceptions
+     * with a user-facing message. Anything else (database, framework errors) gets a generic message so
+     * internal details are never sent to the client.
+     */
+    private static String clientMessage(Exception e, String fallback) {
+        if (e.getClass() == RuntimeException.class && e.getCause() == null && e.getMessage() != null) {
+            return e.getMessage();
+        }
+        return fallback;
     }
 
     @PostMapping("/create-from-cart")
@@ -117,7 +130,7 @@ public class OrderController {
             return ResponseEntity.ok().body(new OrderCreationResponse(order.getId()));
         } catch (Exception e) {
             logger.error("Error creating order from cart", e);
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(clientMessage(e, "Could not create order"));
         }
     }
 

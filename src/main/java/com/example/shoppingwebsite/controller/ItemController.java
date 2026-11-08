@@ -53,6 +53,9 @@ public class ItemController {
 
     @PutMapping("/{id}/stock/decrease")
     public ResponseEntity<?> decreaseStock(@PathVariable Long id, @RequestParam int quantity) {
+        if (quantity <= 0) {
+            return ResponseEntity.badRequest().body("Quantity must be positive");
+        }
         boolean decreased = stockService.decreaseStock(id, quantity);
         if (decreased) {
             return ResponseEntity.ok().build();
@@ -63,6 +66,9 @@ public class ItemController {
 
     @PutMapping("/{id}/stock/increase")
     public ResponseEntity<?> increaseStock(@PathVariable Long id, @RequestParam int quantity) {
+        if (quantity <= 0) {
+            return ResponseEntity.badRequest().body("Quantity must be positive");
+        }
         stockService.increaseStock(id, quantity);
         return ResponseEntity.ok().build();
     }
