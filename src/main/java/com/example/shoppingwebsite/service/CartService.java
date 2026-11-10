@@ -21,6 +21,9 @@ public class CartService {
 
     private static final Logger logger = LoggerFactory.getLogger(CartService.class);
 
+    /** Most units of one product a cart may hold (README: limit of 2 items per product). */
+    private static final int MAX_PER_ITEM = 2;
+
     @Autowired
     private UserRepository userRepository;
 
@@ -61,11 +64,14 @@ public class CartService {
                 .findFirst()
                 .orElse(null);
 
+        int newQuantity = (cartItem == null ? 0 : cartItem.getQuantity()) + quantity;
+        requireAllowedQuantity(newQuantity);
+
         if (cartItem == null) {
             cartItem = new CartItem(cart, item, quantity);
             cart.addItem(cartItem);
         } else {
-            cartItem.setQuantity(cartItem.getQuantity() + quantity);
+            cartItem.setQuantity(newQuantity);
         }
 
         userRepository.save(user);
@@ -84,6 +90,7 @@ public class CartService {
                 .findFirst()
                 .orElseThrow(() -> new ItemNotFoundException("Item not found in cart: " + itemId));
 
+        requireAllowedQuantity(quantity);
         cartItem.setQuantity(quantity);
         userRepository.save(user);
         logger.info("Updated item {} quantity to {} for user {}", itemId, quantity, userEmail);
@@ -138,6 +145,13 @@ public class CartService {
         } catch (Exception e) {
             logger.error("Error calculating cart total for user {}: {}", userEmail, e.getMessage(), e);
             throw new RuntimeException("Error calculating cart total", e);
+        }
+    }
+
+    /** Same per-product limit the order flow enforces (OrderService), so a cart can always be checked out. */
+    private void requireAllowedQuantity(int quantity) {
+        if (quantity <= 0 || quantity > MAX_PER_ITEM) {
+            throw new IllegalArgumentException("Cannot add more than " + MAX_PER_ITEM + " of the same item");
         }
     }
 

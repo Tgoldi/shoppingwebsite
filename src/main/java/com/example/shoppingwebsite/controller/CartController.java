@@ -47,7 +47,7 @@ public class CartController {
             return ResponseEntity.ok(cart.getItems());
         } catch (Exception e) {
             logger.error("Error retrieving cart for user: {}", authentication.getName(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error retrieving cart: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error retrieving cart");
         }
     }
 
@@ -86,9 +86,11 @@ public class CartController {
         } catch (ItemNotFoundException e) {
             logger.error("Item not found: {}", request.getItemId(), e);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Item not found");
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
         } catch (Exception e) {
             logger.error("Error adding to cart for user: {}", authentication.getName(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error adding to cart: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error adding to cart");
         }
     }
 
@@ -114,9 +116,11 @@ public class CartController {
         } catch (ItemNotFoundException e) {
             logger.error("Item not found in cart: {}", itemId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Item not found in cart");
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
         } catch (Exception e) {
             logger.error("Error updating cart item for user: {}", authentication.getName(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error updating cart item: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error updating cart item");
         }
     }
 
@@ -137,7 +141,7 @@ public class CartController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
         } catch (Exception e) {
             logger.error("Error removing cart item for user: {}", authentication.getName(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error removing cart item: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error removing cart item");
         }
     }
 
@@ -158,7 +162,7 @@ public class CartController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
         } catch (Exception e) {
             logger.error("Error clearing cart for user: {}", authentication.getName(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error clearing cart: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error clearing cart");
         }
     }
 
@@ -178,7 +182,7 @@ public class CartController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
         } catch (Exception e) {
             logger.error("Error retrieving cart total for user: {}", authentication.getName(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error retrieving cart total: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error retrieving cart total");
         }
     }
 }

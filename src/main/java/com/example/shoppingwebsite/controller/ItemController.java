@@ -4,12 +4,17 @@ import com.example.shoppingwebsite.model.Item;
 import com.example.shoppingwebsite.model.ItemAvailability;
 import com.example.shoppingwebsite.service.ItemService;
 import com.example.shoppingwebsite.service.StockService;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.List;
 
 @RestController
@@ -23,6 +28,19 @@ public class ItemController {
 
     @Autowired
     private StockService stockService;
+
+    private static final String ADMIN_KEY_HEADER = "X-Admin-Key";
+
+    @Value("${STOCK_ADMIN_KEY:}")
+    private String stockAdminKey;
+
+    @PostConstruct
+    void warnIfStockAdminKeyMissing() {
+        if (stockAdminKey == null || stockAdminKey.isBlank()) {
+            logger.warn("STOCK_ADMIN_KEY is not set: PUT /api/items/{id}/stock/increase and /stock/decrease are disabled. "
+                    + "Set STOCK_ADMIN_KEY and send it in the X-Admin-Key header to use them.");
+        }
+    }
 
     @GetMapping
     public ResponseEntity<List<Item>> getAllItems() {
@@ -51,8 +69,33 @@ public class ItemController {
         return ResponseEntity.ok(quantity);
     }
 
+    /**
+     * Stock changes are an operator action: customers' orders update stock on the server
+     * (OrderService.closeOrder). These endpoints require the X-Admin-Key header to match
+     * the STOCK_ADMIN_KEY environment variable, and are refused when it is not set.
+     */
+    private ResponseEntity<?> checkStockAdmin(String providedKey, int quantity) {
+        if (stockAdminKey == null || stockAdminKey.isBlank()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Stock changes are disabled");
+        }
+        if (providedKey == null || !MessageDigest.isEqual(
+                stockAdminKey.getBytes(StandardCharsets.UTF_8),
+                providedKey.getBytes(StandardCharsets.UTF_8))) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Forbidden");
+        }
+        if (quantity <= 0) {
+            return ResponseEntity.badRequest().body("Quantity must be positive");
+        }
+        return null;
+    }
+
     @PutMapping("/{id}/stock/decrease")
-    public ResponseEntity<?> decreaseStock(@PathVariable Long id, @RequestParam int quantity) {
+    public ResponseEntity<?> decreaseStock(@PathVariable Long id, @RequestParam int quantity,
+                                           @RequestHeader(value = ADMIN_KEY_HEADER, required = false) String adminKey) {
+        ResponseEntity<?> denied = checkStockAdmin(adminKey, quantity);
+        if (denied != null) {
+            return denied;
+        }
         boolean decreased = stockService.decreaseStock(id, quantity);
         if (decreased) {
             return ResponseEntity.ok().build();
@@ -62,7 +105,12 @@ public class ItemController {
     }
 
     @PutMapping("/{id}/stock/increase")
-    public ResponseEntity<?> increaseStock(@PathVariable Long id, @RequestParam int quantity) {
+    public ResponseEntity<?> increaseStock(@PathVariable Long id, @RequestParam int quantity,
+                                           @RequestHeader(value = ADMIN_KEY_HEADER, required = false) String adminKey) {
+        ResponseEntity<?> denied = checkStockAdmin(adminKey, quantity);
+        if (denied != null) {
+            return denied;
+        }
         stockService.increaseStock(id, quantity);
         return ResponseEntity.ok().build();
     }

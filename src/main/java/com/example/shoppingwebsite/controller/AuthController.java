@@ -64,14 +64,32 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<?> logout() {
+    public ResponseEntity<?> logout(@RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
+        // Revoke every access and refresh token issued to this user so far, if the caller proves who they are
+        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
+            try {
+                jwtUtil.revokeAllTokensOf(authorizationHeader.substring(7));
+            } catch (Exception e) {
+                logger.warn("Logout called with an invalid or expired token; nothing revoked");
+            }
+        }
         SecurityContextHolder.clearContext();
         return ResponseEntity.ok().body("Logged out successfully");
     }
 
     @PostMapping(value = "/register", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> registerUser(@RequestBody User user) {
+    public ResponseEntity<?> registerUser(@RequestBody User request) {
         try {
+            // Copy only the fields a new user may set; never trust id, cart or favorites from the client
+            User user = new User();
+            user.setFirstName(request.getFirstName());
+            user.setLastName(request.getLastName());
+            user.setEmail(request.getEmail());
+            user.setPassword(request.getPassword());
+            user.setPhone(request.getPhone());
+            user.setCountry(request.getCountry());
+            user.setCity(request.getCity());
+
             // Check if user already exists
             UserDetails existingUser = null;
             try {
@@ -108,7 +126,8 @@ public class AuthController {
             String username = jwtUtil.extractUsername(token);
             UserDetails userDetails = userService.loadUserByUsername(username);
 
-            if (jwtUtil.validateToken(token, userDetails)) {
+            // Only a refresh token (not an access token) may be exchanged for a new access token
+            if (jwtUtil.validateRefreshToken(token, userDetails)) {
                 String newToken = jwtUtil.generateToken(userDetails);
                 Map<String, String> response = new HashMap<>();
                 response.put("token", newToken);
