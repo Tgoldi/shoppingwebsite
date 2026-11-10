@@ -37,7 +37,8 @@ public class UserController {
             userService.deleteUser(userEmail);
             return ResponseEntity.ok().build();
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error deleting user: " + e.getMessage());
+            org.slf4j.LoggerFactory.getLogger(UserController.class).error("Error deleting user profile", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error deleting user");
         }
     }
 }
